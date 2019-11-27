@@ -12,7 +12,6 @@ import hashlib
 import gensim
 import numpy as np
 import torch
-import torchvision as torchvision
 from bpemb import BPEmb
 from deprecated import deprecated
 
@@ -3182,67 +3181,6 @@ class PrecomputedImageEmbeddings(ImageEmbeddings):
 
     def __str__(self):
         return self.name
-
-
-class NetworkImageEmbeddings(ImageEmbeddings):
-    def __init__(self, name, pretrained=True, transforms=None):
-        super().__init__()
-        model_info = {
-            "resnet50": (torchvision.models.resnet50, lambda x: list(x)[:-1], 2048),
-            "mobilenet_v2": (
-                torchvision.models.mobilenet_v2,
-                lambda x: list(x)[:-1] + [torch.nn.AdaptiveAvgPool2d((1, 1))],
-                1280,
-            ),
-        }
-
-        transforms = [] if transforms is None else transforms
-        transforms += [torchvision.transforms.ToTensor()]
-        if pretrained:
-            imagenet_mean = [0.485, 0.456, 0.406]
-            imagenet_std = [0.229, 0.224, 0.225]
-            transforms += [
-                torchvision.transforms.Normalize(mean=imagenet_mean, std=imagenet_std)
-            ]
-        self.transforms = torchvision.transforms.Compose(transforms)
-
-        if name in model_info:
-            model_constructor = model_info[name][0]
-            model_features = model_info[name][1]
-            embedding_length = model_info[name][2]
-
-            net = model_constructor(pretrained=pretrained)
-            modules = model_features(net.children())
-            self.features = torch.nn.Sequential(*modules)
-
-            self.__embedding_length = embedding_length
-
-            self.name = name
-        else:
-            raise Exception(f"Image embeddings {name} not available.")
-
-    def _add_embeddings_internal(self, images: List[Image]) -> List[Image]:
-        image_tensor = torch.stack([self.transforms(image.data) for image in images])
-        image_embeddings = self.features(image_tensor)
-        image_embeddings = (
-            image_embeddings.view(image_embeddings.shape[:2])
-            if image_embeddings.dim() == 4
-            else image_embeddings
-        )
-        if image_embeddings.dim() != 2:
-            raise Exception(
-                f"Unknown embedding shape of length {image_embeddings.dim()}"
-            )
-        for image_id, image in enumerate(images):
-            image.set_embedding(self.name, image_embeddings[image_id])
-
-    @property
-    def embedding_length(self) -> int:
-        return self.__embedding_length
-
-    def __str__(self):
-        return self.name
-
 
 class ConvTransformNetworkImageEmbeddings(ImageEmbeddings):
     def __init__(self, feats_in, convnet_parms, posnet_parms, transformer_parms):
